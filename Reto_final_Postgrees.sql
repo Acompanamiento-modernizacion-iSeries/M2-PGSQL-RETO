@@ -1,54 +1,10 @@
---Creación de tablas, relaciones y cheks.
---5 consultas que aporten valor al negocio.
---5 procedimientos almacenados que aporten valor al negocio.
---5 funciones que aporten valor al negocio.
-
+--Por: Andres feipe garcia Corrales
 --Enunciado
-/*XYZ Store es una tienda en línea especializada en la venta de productos electrónicos y de consumo. 
-La plataforma permite a los clientes navegar por una amplia gama de productos, 
-realizar pedidos y gestionar sus cuentas de usuario. 
-La base de datos de XYZ Store debe manejar información detallada sobre los productos, 
-los clientes, los pedidos y las transacciones.*/
+/*XYZ Store es una tienda en línea especializada en la venta de productos electrónicos y de consumo.*/
 
-/*En XYZ Store, cada cliente tiene un perfil con su información personal, incluyendo nombre, 
-apellido, dirección, teléfono, correo electrónico y fecha de registro. 
-Los clientes pueden explorar el catálogo de productos, 
-añadir productos a su carrito de compras, y realizar pedidos. 
-Cada producto en el catálogo tiene atributos como el identificador del producto, nombre, 
-descripción, precio, stock y categoría.*/
-
-/*Cuando un cliente desea realizar una compra, selecciona productos y 
-los añade a su carrito de compras. Al confirmar la compra, 
-se genera un pedido que contiene información sobre los productos comprados, 
-las cantidades, el precio total, y el estado del pedido (por ejemplo, procesando, 
-enviado, entregado). Cada pedido está asociado a un cliente y puede contener múltiples productos. 
-Los pedidos registran la fecha y hora en que se realizaron.*/
-
-
-/*Los clientes pueden revisar sus pedidos pasados y realizar búsquedas de pedidos realizados 
-en un periodo específico. La plataforma también permite a los clientes dejar reseñas y 
-calificaciones para los productos que han comprado, proporcionando feedback a otros clientes y a 
-la tienda. Cada reseña incluye la calificación, un comentario y la fecha en que se realizó.*/
-
-/*Además, XYZ Store maneja una lista de deseos donde los clientes pueden guardar 
-productos que les interesan para futuras compras. 
-La lista de deseos de cada cliente puede contener múltiples productos y se 
-actualiza según las preferencias del cliente.*/
-
-
-/*La gestión del inventario es crucial para XYZ Store. Cuando se realiza una venta, 
-el stock de los productos vendidos se actualiza automáticamente. 
-Los clientes pueden consultar el stock actual de un producto antes de realizar una compra, 
-y la tienda debe asegurarse de que la información de stock sea precisa y 
-actualizada para evitar problemas de sobreventa.*/
-
-
-/*XYZ Store valora la opinión de sus clientes y utiliza las calificaciones y 
-comentarios dejados por los clientes para mejorar su servicio y la selección de productos. 
-Los clientes pueden consultar las reseñas y calificaciones de un producto 
-específico antes de tomar una decisión de compra, lo que les ayuda a tomar decisiones 
-informadas basadas en las experiencias de otros usuarios.*/
-
+------------------------------------------------------------------------------------------------------------
+-- creación de basde de datos
+------------------------------------------------------------------------------------------------------------
 create  table clientes(
    cliente_id integer primary key,
    nombre varchar(50) not null,
@@ -117,6 +73,10 @@ create table deseos_cliente_producto(
 	fecha_registro timestamp not null default current_timestamp,
 	primary key (cliente_id, producto_id)
 );
+
+----------------------------------------------------------------------------------------------------------
+-- Creación de datos
+----------------------------------------------------------------------------------------------------------
 
 insert into  Clientes 
 values
@@ -345,8 +305,9 @@ select * from compras;
 select * from reseñas_Cliente_producto;
 
 
-
+---------------------------------------------------------------------------------------------------
 --Consultas
+---------------------------------------------------------------------------------------------------
 --1. consulta de productos que estan en inventario y cuales se deben comprar
 select a.producto_id, a.nombre, b.nombre as categoria, stock,
 case when stock = 0 then 'producto sin stock, contactar proveedores para avastecer' 
@@ -372,6 +333,22 @@ join productos c on c.producto_id = b.producto_id
 where b.estado_id not in(1, 2, 9, 8)
 group by a.cliente_id, a.nombre, a.apellido , c.producto_id, c.nombre
 order by  sum(valor_total) DESC ;
+
+
+--4 total de ventas por cada mes y año
+SELECT extract(month from fecha) AS mes, 
+       extract(year from fecha) AS ano,
+SUM(valor_total) AS total_ventas
+FROM compras
+GROUP BY mes, ano
+ORDER BY mes, ano;
+
+--5 TOP de los 10 productos mas vendidos
+select a.producto_id, b.nombre, a.cantidad 
+from compras a 
+join productos b on b.producto_id = a. producto_id
+order by cantidad desc limit 10;
+
 
 --Procedimientos almacenados
 --  1.stored procedure que asigna producto al carro de compras
@@ -539,14 +516,76 @@ create or replace  procedure insertar_cliente(
 ) language plpgsql 
 as $$
 begin
+
+    if p_identificacion = 0 then 
+	   raise exception 'nombre de cliente en blanco';
+	end if;
+	if trim(p_apellido) = '' then 
+	   raise exception 'apellido de cliente en blanco';
+	end if;
+	if trim(p_email) = '' then 
+	   raise exception 'email de cliente en blanco';
+	end if;
     INSERT INTO clientes (cliente_id, nombre, apellido, direccion, telefono, email)
     VALUES (p_identificacion, p_nombre, p_apellido, p_direccion, p_telefono, p_email);
 end;
 $$;
 
 select * from clientes;
-call insertar_cliente(1054986437, 'Jessica', 'Agudelo', 'Barrio el savador', '3212665676', 'jessica_hermosa@gmail.com' );
+call insertar_cliente(1054986437, 'Jessica', '', 'Barrio el savador', '3212665676', 'jessica_hermosa@gmail.com' );
 
+--5  procedimiento para actualizar productos
+create or replace procedure actualizar_producto (
+	id_producto integer,
+	nombre_producto varchar(200), 
+	id_categoria integer,
+    descripcion_producto varchar(500),
+    precio_producto numeric(15, 2),
+    cantidad_stock integer)
+language plpgsql
+as $$
+    -- creacion de variables
+	declare existe_categoria boolean;
+	declare existe_producto boolean;
+	
+    begin
+	-- se valida nombre producto
+	   if trim(nombre_producto) = ''  then 
+	       raise exception 'Debe ingresar el nombre del producto';
+       end if;
+	   
+	   	-- se valida categoria producto
+	   if id_categoria = 0  then 
+	       raise exception 'Debe ingresar la categoria del producto';
+       end if;
+	   
+	   -- se valida la categoria
+	   select case when count(1) > 0 then '1' else '0' end into existe_categoria
+       from categoria_producto  where categoria_id = id_categoria ;
+	   if not existe_categoria then
+	      raise exception 'categoria no existe';
+	   end if;
+	   
+	   	   	-- se valida que el producto exista		
+	   select case when count(1) > 0 then '1' else '0' end into existe_producto
+       from productos  where producto_id = id_producto ;
+	   if not existe_producto then 
+	      RAISE EXCEPTION 'El producto no existe en el sistema';
+	   end if;
+	   
+	   update productos set nombre = nombre_producto,
+	                        categoria_id = id_categoria,
+							descripcion = descripcion_producto,
+							precio = precio_producto,
+							stock = cantidad_stock
+		where producto_id = id_producto;
+	   
+    end;
+$$; 
+
+call actualizar_producto(1072, 'Nuevo producto prueba actualizado', 4, 'Se actualiza categoria del producto', 160000.00, 50) ;
+
+select * from productos;
 
 
 --Funciones
@@ -617,5 +656,66 @@ $$;
 
 select * from estados;
 select consultar_carro_compras(1037575512);
+
+--3 función que devuelve promedio de ventas en un rago de fechas
+
+create or replace function promedio_ventas_mes(fecha_desde date , fecha_hasta date)
+returns numeric(15,2)
+ language plpgsql
+ as $$
+    -- creacion de variables
+       	declare valor_promedio_ventas numeric(15, 2);
+    begin
+    -- logica de la funcion
+	   select AVG(valor_total) into valor_promedio_ventas
+	   from compras where fecha between  fecha_desde and fecha_hasta;
+	   
+	   return valor_promedio_ventas;
+    end;
+$$; 
+
+select promedio_ventas_mes('2023-01-01' , '2024-12-31');
+
+-- 4 función que retorna el stock del inventyario de un producto
+
+create or replace function stock_inventario_producto(id_producto integer)
+returns integer
+ language plpgsql
+ as $$
+    -- creacion de variables
+       	declare cantidad_stock integer;
+    begin
+    -- logica de la funcion
+	   select stock into cantidad_stock
+	   from productos where producto_id = id_producto;
+	   
+	   return cantidad_stock;
+    end;
+$$; 
+
+select stock_inventario_producto(1001);
+
+--5 Consulta de los deseos de los clientes para perfilamiento
+
+create or replace function consultar_deseos (id_cliente integer)
+returns table(id_producto integer,
+			  nombre_producto varchar,
+			  fecha date) 
+ language plpgsql
+ as $$
+
+    begin
+    -- logica de la funcion
+	   return query
+       select b.producto_id, b.nombre, date(a.fecha_registro)
+	   from deseos_cliente_producto a
+       join productos b on b.producto_id = a.producto_id
+       where a.cliente_id = id_cliente;
+    end;
+$$; 
+
+select * from consultar_deseos(1056736499);
+select * from deseos_cliente_producto;
+
 
 
